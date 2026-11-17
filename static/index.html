@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Student Portal</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<style>
+:root{--bg:#eef2f5;--ink:#1c2733;--card:#fff;--accent:#1f6f8b;--line:#d3dce3;--bad:#b3261e}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,Segoe UI,sans-serif;background:var(--bg);color:var(--ink)}
+.wrap{max-width:980px;margin:0 auto;padding:20px;display:grid;gap:16px;grid-template-columns:1fr 1.3fr}
+@media(max-width:760px){.wrap{grid-template-columns:1fr}}
+h1{grid-column:1/-1;margin:0}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+h2{margin:0 0 10px;font-size:1.05rem}
+label{display:block;font-size:.85rem;margin:8px 0 3px}
+input,select{width:100%;padding:9px;border:1px solid var(--line);border-radius:6px;font:inherit}
+button{background:var(--accent);color:#fff;border:0;border-radius:6px;padding:9px 14px;font:inherit;cursor:pointer;margin-top:10px}
+button.ghost{background:transparent;color:var(--accent);border:1px solid var(--line);margin:0;padding:5px 9px}
+ul{list-style:none;margin:0;padding:0}
+li{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:9px 6px;border-bottom:1px solid var(--line)}
+li.sel{background:#e3f1f6}
+.err{color:var(--bad);font-size:.9rem;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+td,th{text-align:left;padding:7px 4px;border-bottom:1px solid var(--line)}
+td input{width:70px;padding:5px}
+.muted{color:#5f6f7c}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+const api = async (url, opts = {}) => {
+  const res = await fetch(url, { headers: { "Content-Type": "application/json" }, ...opts, body: opts.body && JSON.stringify(opts.body) });
+  if (res.status === 204 || res.status === 201 && !res.headers.get("content-type")?.includes("json")) return null;
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Something went wrong.");
+  return data;
+};
+const grade = m => m == null ? "-" : m >= 85 ? "A" : m >= 70 ? "B" : m >= 60 ? "C" : m >= 50 ? "D" : "F";
+
+function App() {
+  const [students, setStudents] = useState([]);
+  const [courses, setCourses] = useState([]);
+  const [sel, setSel] = useState(null);
+  const [enr, setEnr] = useState([]);
+  const [form, setForm] = useState({ roll_no: "", name: "", email: "", semester: "5" });
+  const [error, setError] = useState("");
+  const [courseId, setCourseId] = useState("");
+
+  const loadStudents = () => api("/api/students").then(setStudents);
+  const loadEnr = id => api(`/api/students/${id}/enrollments`).then(setEnr);
+  useEffect(() => { loadStudents(); api("/api/courses").then(c => { setCourses(c); setCourseId(c[0]?.id); }); }, []);
+  useEffect(() => { sel ? loadEnr(sel.id) : setEnr([]); }, [sel]);
+
+  const run = async fn => { try { setError(""); await fn(); } catch (e) { setError(e.message); } };
+  const addStudent = () => run(async () => {
+    await api("/api/students", { method: "POST", body: form });
+    setForm({ roll_no: "", name: "", email: "", semester: "5" }); loadStudents();
+  });
+  const remove = s => run(async () => { await api(`/api/students/${s.id}`, { method: "DELETE" }); if (sel?.id === s.id) setSel(null); loadStudents(); });
+  const enroll = () => run(async () => { await api(`/api/students/${sel.id}/enrollments`, { method: "POST", body: { course_id: Number(courseId) } }); loadEnr(sel.id); });
+  const saveMarks = (e, v) => run(async () => { await api(`/api/enrollments/${e.id}`, { method: "PATCH", body: { marks: Number(v) } }); loadEnr(sel.id); });
+  const set = k => ev => setForm({ ...form, [k]: ev.target.value });
+
+  return (
+    <div className="wrap">
+      <h1>Student Portal</h1>
+      <section>
+        <h2>Add a student</h2>
+        <label htmlFor="r">Roll number</label><input id="r" value={form.roll_no} onChange={set("roll_no")} />
+        <label htmlFor="n">Name</label><input id="n" value={form.name} onChange={set("name")} />
+        <label htmlFor="e">Email</label><input id="e" value={form.email} onChange={set("email")} />
+        <label htmlFor="s">Semester</label><input id="s" type="number" min="1" max="8" value={form.semester} onChange={set("semester")} />
+        <button onClick={addStudent}>Add student</button>
+        {error && <p className="err" role="alert">{error}</p>}
+        <h2 style={{ marginTop: 18 }}>Students ({students.length})</h2>
+        {students.length === 0 && <p className="muted">No students yet. Add one above.</p>}
+        <ul>{students.map(s => (
+          <li key={s.id} className={sel?.id === s.id ? "sel" : ""}>
+            <span><b>{s.name}</b><br /><span className="muted">{s.roll_no} - semester {s.semester}</span></span>
+            <span><button className="ghost" onClick={() => setSel(s)}>Open</button> <button className="ghost" onClick={() => remove(s)}>Delete</button></span>
+          </li>))}
+        </ul>
+      </section>
+      <section>
+        {!sel ? <p className="muted">Open a student to manage courses and marks.</p> : <>
+          <h2>{sel.name}: courses and marks</h2>
+          <div style={{ display: "flex", gap: 8 }}>
+            <select value={courseId} onChange={e => setCourseId(e.target.value)} aria-label="Course">
+              {courses.map(c => <option key={c.id} value={c.id}>{c.code} {c.title}</option>)}
+            </select>
+            <button style={{ marginTop: 0 }} onClick={enroll}>Enroll</button>
+          </div>
+          <table style={{ marginTop: 12 }}>
+            <thead><tr><th>Course</th><th>Marks</th><th>Grade</th></tr></thead>
+            <tbody>{enr.map(e => (
+              <tr key={e.id}><td>{e.code} {e.title}</td>
+                <td><input type="number" min="0" max="100" defaultValue={e.marks ?? ""} aria-label={"Marks for " + e.code} onBlur={ev => ev.target.value !== "" && saveMarks(e, ev.target.value)} /></td>
+                <td>{grade(e.marks)}</td></tr>))}
+            </tbody>
+          </table>
+          {enr.length === 0 && <p className="muted">Not enrolled in any course yet.</p>}
+        </>}
+      </section>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
